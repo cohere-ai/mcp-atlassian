@@ -104,6 +104,10 @@ async def main_lifespan(app: FastMCP[MainAppContext]) -> AsyncIterator[dict]:
 
 
 class AtlassianMCP(FastMCP[MainAppContext]):
+    def __init__(self, *args, **kwargs) -> None:  # pyright: ignore[reportUnknownParameterType, reportMissingParameterType]  # noqa: ANN002, ANN003
+        kwargs.pop("description", None)  # pyright: ignore[reportUnknownMemberType]
+        super().__init__(*args, **kwargs)  # pyright: ignore[reportUnknownArgumentType]
+
     """Custom FastMCP server class for Atlassian integration with tool filtering."""
 
     async def _mcp_list_tools(self) -> list[MCPTool]:
@@ -326,8 +330,8 @@ class UserTokenMiddleware(BaseHTTPMiddleware):
 
 
 main_mcp = AtlassianMCP(name="Atlassian MCP", lifespan=main_lifespan)
-main_mcp.mount("jira", jira_mcp)
-main_mcp.mount("confluence", confluence_mcp)
+main_mcp.mount(jira_mcp, prefix="jira")
+main_mcp.mount(confluence_mcp, prefix="confluence")
 
 
 @main_mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
