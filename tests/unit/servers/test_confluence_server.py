@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from fastmcp import Client, FastMCP
 from fastmcp.client import FastMCPTransport
 from starlette.requests import Request
@@ -301,8 +302,8 @@ def mock_request():
     return request
 
 
-@pytest.fixture
-async def client(test_confluence_mcp, mock_confluence_fetcher):
+@pytest_asyncio.fixture
+async def client(test_confluence_mcp, mock_confluence_fetcher, mock_request):
     """Create a FastMCP client with mocked Confluence fetcher and request state."""
     with (
         patch(
@@ -311,25 +312,25 @@ async def client(test_confluence_mcp, mock_confluence_fetcher):
         ),
         patch(
             "src.mcp_atlassian.servers.dependencies.get_http_request",
-            MagicMock(spec=Request, state=MagicMock()),
+            return_value=mock_request,
         ),
     ):
-        client_instance = Client(transport=FastMCPTransport(test_confluence_mcp))
-        async with client_instance as connected_client:
-            yield connected_client
+        async with Client(
+            transport=FastMCPTransport(test_confluence_mcp)
+        ) as client_instance:
+            yield client_instance
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def no_fetcher_client_fixture(no_fetcher_test_confluence_mcp, mock_request):
     """Create a client that simulates missing Confluence fetcher configuration."""
-    client_for_no_fetcher_test = Client(
+    async with Client(
         transport=FastMCPTransport(no_fetcher_test_confluence_mcp)
-    )
-    async with client_for_no_fetcher_test as connected_client_for_no_fetcher:
-        yield connected_client_for_no_fetcher
+    ) as client_for_no_fetcher:
+        yield client_for_no_fetcher
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_search(client, mock_confluence_fetcher):
     """Test the search tool with basic query."""
     response = await client.call_tool("confluence_search", {"query": "test search"})
@@ -346,7 +347,7 @@ async def test_search(client, mock_confluence_fetcher):
     assert result_data[0]["title"] == "Test Page Mock Title"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_page(client, mock_confluence_fetcher):
     """Test the get_page tool with default parameters."""
     response = await client.call_tool("confluence_get_page", {"page_id": "123456"})
@@ -363,7 +364,7 @@ async def test_get_page(client, mock_confluence_fetcher):
     assert "This is a test page content" in result_data["metadata"]["content"]["value"]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_page_no_metadata(client, mock_confluence_fetcher):
     """Test get_page with metadata disabled."""
     response = await client.call_tool(
@@ -380,7 +381,7 @@ async def test_get_page_no_metadata(client, mock_confluence_fetcher):
     assert "This is a test page content" in result_data["content"]["value"]
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_page_no_markdown(client, mock_confluence_fetcher):
     """Test get_page with HTML content format."""
     mock_page_html = MagicMock(spec=ConfluencePage)
@@ -411,7 +412,7 @@ async def test_get_page_no_markdown(client, mock_confluence_fetcher):
     assert result_data["metadata"]["content_format"] == "storage"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_page_children(client, mock_confluence_fetcher):
     """Test the get_page_children tool."""
     response = await client.call_tool(
@@ -432,7 +433,7 @@ async def test_get_page_children(client, mock_confluence_fetcher):
     assert result_data["results"][0]["title"] == "Test Page Mock Title"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_comments(client, mock_confluence_fetcher):
     """Test retrieving page comments."""
     response = await client.call_tool("confluence_get_comments", {"page_id": "123456"})
@@ -445,7 +446,7 @@ async def test_get_comments(client, mock_confluence_fetcher):
     assert result_data[0]["author"] == "Test User"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_add_comment(client, mock_confluence_fetcher):
     """Test adding a comment to a Confluence page."""
     response = await client.call_tool(
@@ -467,7 +468,7 @@ async def test_add_comment(client, mock_confluence_fetcher):
     assert result_data["comment"]["created"] == "2023-08-01T13:00:00.000Z"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_get_labels(client, mock_confluence_fetcher):
     """Test retrieving page labels."""
     response = await client.call_tool("confluence_get_labels", {"page_id": "123456"})
@@ -477,7 +478,7 @@ async def test_get_labels(client, mock_confluence_fetcher):
     assert result_data[0]["name"] == "test-label"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_add_label(client, mock_confluence_fetcher):
     """Test adding a label to a page."""
     response = await client.call_tool(
@@ -491,7 +492,7 @@ async def test_add_label(client, mock_confluence_fetcher):
     assert result_data[0]["name"] == "test-label"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_search_user(client, mock_confluence_fetcher):
     """Test the search_user tool with CQL query."""
     response = await client.call_tool(
@@ -511,7 +512,7 @@ async def test_search_user(client, mock_confluence_fetcher):
     assert result_data[0]["user"]["display_name"] == "First Last"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_create_page_with_numeric_parent_id(client, mock_confluence_fetcher):
     """Test creating a page with numeric parent_id (integer) - should convert to string."""
     response = await client.call_tool(
@@ -536,7 +537,7 @@ async def test_create_page_with_numeric_parent_id(client, mock_confluence_fetche
     assert result_data["page"]["title"] == "Test Page Mock Title"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_create_page_with_string_parent_id(client, mock_confluence_fetcher):
     """Test creating a page with string parent_id - should remain unchanged."""
     response = await client.call_tool(
@@ -560,7 +561,7 @@ async def test_create_page_with_string_parent_id(client, mock_confluence_fetcher
     assert result_data["page"]["title"] == "Test Page Mock Title"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_update_page_with_numeric_parent_id(client, mock_confluence_fetcher):
     """Test updating a page with numeric parent_id (integer) - should convert to string."""
     response = await client.call_tool(
@@ -584,7 +585,7 @@ async def test_update_page_with_numeric_parent_id(client, mock_confluence_fetche
     assert result_data["page"]["title"] == "Test Page Mock Title"
 
 
-@pytest.mark.anyio
+@pytest.mark.asyncio
 async def test_update_page_with_string_parent_id(client, mock_confluence_fetcher):
     """Test updating a page with string parent_id - should remain unchanged."""
     response = await client.call_tool(

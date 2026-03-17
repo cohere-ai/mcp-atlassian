@@ -7,6 +7,7 @@ from pathlib import Path
 
 from md2conf.converter import (
     ConfluenceConverterOptions,
+    ConfluenceSiteMetadata,
     ConfluenceStorageFormatConverter,
     elements_to_string,
     markdown_to_html,
@@ -68,6 +69,13 @@ class ConfluencePreprocessor(BasePreprocessor):
                 )
 
                 # Create a converter
+                # Extract domain and base_path from base_url
+                from urllib.parse import urlparse
+
+                parsed_url = urlparse(self.base_url)
+                domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                base_path = parsed_url.path.rstrip("/")
+
                 converter = ConfluenceStorageFormatConverter(
                     options=options,
                     path=Path(temp_dir) / "temp.md",
@@ -76,6 +84,9 @@ class ConfluencePreprocessor(BasePreprocessor):
                         domain="", base_path="", space_key=None
                     ),
                     page_metadata={},
+                    site_metadata=ConfluenceSiteMetadata(
+                        domain=domain, base_path=base_path, space_key=""
+                    ),
                 )
 
                 # Transform the HTML to Confluence storage format
