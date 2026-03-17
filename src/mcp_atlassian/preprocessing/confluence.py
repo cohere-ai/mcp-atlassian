@@ -80,9 +80,6 @@ class ConfluencePreprocessor(BasePreprocessor):
                     options=options,
                     path=Path(temp_dir) / "temp.md",
                     root_dir=Path(temp_dir),
-                    site_metadata=ConfluenceSiteMetadata(
-                        domain="", base_path="", space_key=None
-                    ),
                     page_metadata={},
                     site_metadata=ConfluenceSiteMetadata(
                         domain=domain, base_path=base_path, space_key=""

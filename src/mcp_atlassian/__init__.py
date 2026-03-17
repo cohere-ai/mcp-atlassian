@@ -29,6 +29,8 @@ except PackageNotFoundError:
     # package is not installed
     __version__ = "0.0.0"
 
+logger = logging.getLogger(__name__)
+
 
 async def _watch_parent_exit(stop_event: threading.Event) -> None:
     parent_pid = os.getppid()
