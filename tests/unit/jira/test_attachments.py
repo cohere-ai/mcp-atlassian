@@ -72,6 +72,7 @@ class TestAttachmentsMixin:
             patch("os.path.exists") as mock_exists,
             patch("os.path.getsize") as mock_getsize,
             patch("os.makedirs") as mock_makedirs,
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             mock_exists.return_value = True
             mock_getsize.return_value = 12  # Length of "test content"
@@ -108,6 +109,8 @@ class TestAttachmentsMixin:
             patch("os.makedirs") as mock_makedirs,
             patch("os.path.abspath") as mock_abspath,
             patch("os.path.isabs") as mock_isabs,
+            patch("os.getcwd", return_value="/absolute/path"),
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             mock_exists.return_value = True
             mock_getsize.return_value = 12
@@ -137,9 +140,10 @@ class TestAttachmentsMixin:
         mock_response.raise_for_status.side_effect = Exception("HTTP Error")
         attachments_mixin.jira._session.get.return_value = mock_response
 
-        result = attachments_mixin.download_attachment(
-            "https://test.url/attachment", "/tmp/test_file.txt"
-        )
+        with patch("mcp_atlassian.jira.attachments.validate_safe_path"):
+            result = attachments_mixin.download_attachment(
+                "https://test.url/attachment", "/tmp/test_file.txt"
+            )
         assert result is False
 
     def test_download_attachment_file_write_error(
@@ -156,6 +160,7 @@ class TestAttachmentsMixin:
         with (
             patch("builtins.open", mock_open()) as mock_file,
             patch("os.makedirs") as mock_makedirs,
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             mock_file().write.side_effect = OSError("Write error")
 
@@ -179,6 +184,7 @@ class TestAttachmentsMixin:
             patch("builtins.open", mock_open()) as mock_file,
             patch("os.path.exists") as mock_exists,
             patch("os.makedirs") as mock_makedirs,
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             mock_exists.return_value = False  # File doesn't exist after write
 
@@ -231,6 +237,7 @@ class TestAttachmentsMixin:
                 "mcp_atlassian.models.jira.JiraAttachment.from_api_response",
                 side_effect=[mock_attachment1, mock_attachment2],
             ),
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             result = attachments_mixin.download_issue_attachments(
                 "TEST-123", "/tmp/attachments"
@@ -281,6 +288,8 @@ class TestAttachmentsMixin:
             ),
             patch("os.path.isabs") as mock_isabs,
             patch("os.path.abspath") as mock_abspath,
+            patch("os.getcwd", return_value="/absolute/path"),
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             mock_isabs.return_value = False
             mock_abspath.return_value = "/absolute/path/attachments"
@@ -302,7 +311,10 @@ class TestAttachmentsMixin:
         mock_issue = {"fields": {"attachment": []}}
         attachments_mixin.jira.issue.return_value = mock_issue
 
-        with patch("pathlib.Path.mkdir") as mock_mkdir:
+        with (
+            patch("pathlib.Path.mkdir") as mock_mkdir,
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
+        ):
             result = attachments_mixin.download_issue_attachments(
                 "TEST-123", "/tmp/attachments"
             )
@@ -320,9 +332,12 @@ class TestAttachmentsMixin:
         """Test download when issue cannot be retrieved."""
         attachments_mixin.jira.issue.return_value = None
 
-        with pytest.raises(
-            TypeError,
-            match="Unexpected return value type from `jira.issue`: <class 'NoneType'>",
+        with (
+            pytest.raises(
+                TypeError,
+                match="Unexpected return value type from `jira.issue`: <class 'NoneType'>",
+            ),
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             attachments_mixin.download_issue_attachments("TEST-123", "/tmp/attachments")
 
@@ -334,9 +349,10 @@ class TestAttachmentsMixin:
         mock_issue = {}  # Missing 'fields' key
         attachments_mixin.jira.issue.return_value = mock_issue
 
-        result = attachments_mixin.download_issue_attachments(
-            "TEST-123", "/tmp/attachments"
-        )
+        with patch("mcp_atlassian.jira.attachments.validate_safe_path"):
+            result = attachments_mixin.download_issue_attachments(
+                "TEST-123", "/tmp/attachments"
+            )
 
         # Assertions
         assert result["success"] is False
@@ -386,6 +402,7 @@ class TestAttachmentsMixin:
                 "mcp_atlassian.models.jira.JiraAttachment.from_api_response",
                 side_effect=[mock_attachment1, mock_attachment2],
             ),
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             result = attachments_mixin.download_issue_attachments(
                 "TEST-123", "/tmp/attachments"
@@ -430,6 +447,7 @@ class TestAttachmentsMixin:
                 "mcp_atlassian.models.jira.JiraAttachment.from_api_response",
                 return_value=mock_attachment,
             ),
+            patch("mcp_atlassian.jira.attachments.validate_safe_path"),
         ):
             result = attachments_mixin.download_issue_attachments(
                 "TEST-123", "/tmp/attachments"
