@@ -1,12 +1,10 @@
 """Confluence FastMCP server instance and tool definitions."""
 
-import base64
 import json
 import logging
 from typing import Annotated
 
 from fastmcp import Context, FastMCP
-from mcp.types import BlobResourceContents, EmbeddedResource, TextContent
 from pydantic import BeforeValidator, Field
 
 from mcp_atlassian.exceptions import MCPAtlassianAuthenticationError
@@ -745,32 +743,3 @@ async def search_user(
             indent=2,
             ensure_ascii=False,
         )
-
-
-# ai gen code, beware
-
-_MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024  # 50 MB
-
-
-@confluence_mcp.tool(tags={"confluence", "read"})
-async def download_attachment(
-    ctx: Context,
-    attachment_id: Annotated[
-        str,
-        Field(description="The Confluence attachment ID to download"),
-    ],
-) -> EmbeddedResource | TextContent:
-    raise NotImplementedError()
-
-
-@confluence_mcp.tool(tags={"confluence", "read"})
-async def download_content_attachments(
-    ctx: Context,
-    content_id: Annotated[
-        str,
-        Field(
-            description="The Confluence content/page ID whose attachments to download"
-        ),
-    ],
-) -> list[TextContent | EmbeddedResource]:
-    raise NotImplementedError()
