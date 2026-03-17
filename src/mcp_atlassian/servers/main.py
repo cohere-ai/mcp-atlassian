@@ -24,7 +24,6 @@ from mcp_atlassian.utils.io import is_read_only_mode
 from mcp_atlassian.utils.logging import mask_sensitive
 from mcp_atlassian.utils.tools import get_enabled_tools, should_include_tool
 
-from .confluence import confluence_mcp
 from .context import MainAppContext
 from .jira import jira_mcp
 
@@ -61,19 +60,7 @@ async def main_lifespan(app: FastMCP[MainAppContext]) -> AsyncIterator[dict]:
             logger.error(f"Failed to load Jira configuration: {e}", exc_info=True)
 
     if services.get("confluence"):
-        try:
-            confluence_config = ConfluenceConfig.from_env()
-            if confluence_config.is_auth_configured():
-                loaded_confluence_config = confluence_config
-                logger.info(
-                    "Confluence configuration loaded and authentication is configured."
-                )
-            else:
-                logger.warning(
-                    "Confluence URL found, but authentication is not fully configured. Confluence tools will be unavailable."
-                )
-        except Exception as e:
-            logger.error(f"Failed to load Confluence configuration: {e}", exc_info=True)
+        raise NotImplementedError("confluence unsupported for now")
 
     app_context = MainAppContext(
         full_jira_config=loaded_jira_config,
@@ -161,6 +148,8 @@ class AtlassianMCP(FastMCP[MainAppContext]):
             # Exclude Jira/Confluence tools if config is not fully authenticated
             is_jira_tool = "jira" in tool_tags
             is_confluence_tool = "confluence" in tool_tags
+            if is_confluence_tool:
+                raise NotImplementedError("confluence not supported for now")
             service_configured_and_available = True
             if app_lifespan_state:
                 if is_jira_tool and not app_lifespan_state.full_jira_config:
@@ -331,7 +320,8 @@ class UserTokenMiddleware(BaseHTTPMiddleware):
 
 main_mcp = AtlassianMCP(name="Atlassian MCP", lifespan=main_lifespan)
 main_mcp.mount(jira_mcp, prefix="jira")
-main_mcp.mount(confluence_mcp, prefix="confluence")
+# removing confluence for now
+# main_mcp.mount(confluence_mcp, prefix="confluence")
 
 
 @main_mcp.custom_route("/healthz", methods=["GET"], include_in_schema=False)
