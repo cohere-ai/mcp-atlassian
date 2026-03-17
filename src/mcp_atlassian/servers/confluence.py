@@ -1,10 +1,12 @@
 """Confluence FastMCP server instance and tool definitions."""
 
+import base64
 import json
 import logging
 from typing import Annotated
 
 from fastmcp import Context, FastMCP
+from mcp.types import BlobResourceContents, EmbeddedResource, TextContent
 from pydantic import BeforeValidator, Field
 
 from mcp_atlassian.exceptions import MCPAtlassianAuthenticationError
@@ -743,3 +745,218 @@ async def search_user(
             indent=2,
             ensure_ascii=False,
         )
+
+# ai gen code, beware
+
+_MAX_ATTACHMENT_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+@confluence_mcp.tool(tags={"confluence", "read"})
+async def download_attachment(
+    ctx: Context,
+    attachment_id: Annotated[
+        str,
+        Field(description="The Confluence attachment ID to download"),
+    ],
+) -> EmbeddedResource | TextContent:
+    """Download a single Confluence attachment by its ID and return it as an embedded resource.
+
+    Args:
+        ctx: The FastMCP context.
+        attachment_id: The ID of the attachment.
+
+    Returns:
+        EmbeddedResource with the binary content, or TextContent with error details.
+    """
+    try:
+        confluence_fetcher = await get_confluence_fetcher(ctx)
+        base_url = confluence_fetcher.config.url.rstrip("/")
+
+        meta_url = f"{base_url}/rest/api/content/{attachment_id}"
+        meta_resp = confluence_fetcher.confluence._session.get(meta_url)
+        meta_resp.raise_for_status()
+        meta = meta_resp.json()
+
+        title = meta.get("title", attachment_id)
+        download_path = meta.get("_links", {}).get("download")
+        if not download_path:
+            return TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "success": False,
+                        "error": f"No download URL found for attachment {attachment_id}",
+                    }
+                ),
+            )
+
+        file_size = meta.get("extensions", {}).get("fileSize", 0)
+        if file_size > _MAX_ATTACHMENT_SIZE:
+            return TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "success": False,
+                        "error": (
+                            f"Attachment '{title}' ({file_size} bytes) "
+                            "exceeds 50 MB limit"
+                        ),
+                    }
+                ),
+            )
+
+        download_url = f"{base_url}{download_path}"
+        dl_resp = confluence_fetcher.confluence._session.get(
+            download_url, stream=True
+        )
+        dl_resp.raise_for_status()
+
+        content = b""
+        for chunk in dl_resp.iter_content(chunk_size=8192):
+            content += chunk
+
+        mime_type = meta.get("extensions", {}).get(
+            "mediaType", "application/octet-stream"
+        )
+        blob = base64.b64encode(content).decode("utf-8")
+
+        return EmbeddedResource(
+            type="resource",
+            resource=BlobResourceContents(
+                uri=f"attachment://{attachment_id}/{title}",
+                mimeType=mime_type,
+                blob=blob,
+            ),
+        )
+    except Exception as e:
+        logger.error(f"Error downloading attachment {attachment_id}: {e}")
+        return TextContent(
+            type="text",
+            text=json.dumps({"success": False, "error": str(e)}),
+        )
+
+
+@confluence_mcp.tool(tags={"confluence", "read"})
+async def download_content_attachments(
+    ctx: Context,
+    content_id: Annotated[
+        str,
+        Field(
+            description="The Confluence content/page ID whose attachments to download"
+        ),
+    ],
+) -> list[TextContent | EmbeddedResource]:
+    """Download all attachments for a Confluence page and return them as embedded resources.
+
+    Args:
+        ctx: The FastMCP context.
+        content_id: The ID of the content/page.
+
+    Returns:
+        List with a TextContent summary followed by EmbeddedResource items.
+    """
+    confluence_fetcher = await get_confluence_fetcher(ctx)
+    result = confluence_fetcher.get_content_attachments(content_id)
+
+    if not result.get("success"):
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "success": False,
+                        "error": result.get("error", "Unknown error"),
+                    }
+                ),
+            )
+        ]
+
+    attachments = result.get("attachments", [])
+    if not attachments:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {
+                        "success": True,
+                        "message": f"No attachments found for content {content_id}",
+                    }
+                ),
+            )
+        ]
+
+    base_url = confluence_fetcher.config.url.rstrip("/")
+    downloaded = 0
+    failed: list[dict[str, str]] = []
+    resources: list[EmbeddedResource] = []
+
+    for att in attachments:
+        title = att.get("title", "unknown")
+        file_size = att.get("extensions", {}).get("fileSize", 0)
+
+        if file_size > _MAX_ATTACHMENT_SIZE:
+            failed.append(
+                {
+                    "filename": title,
+                    "error": (
+                        f"Attachment '{title}' ({file_size} bytes) "
+                        "exceeds 50 MB limit"
+                    ),
+                }
+            )
+            continue
+
+        download_path = att.get("_links", {}).get("download")
+        if not download_path:
+            failed.append(
+                {
+                    "filename": title,
+                    "error": f"No download URL for attachment '{title}'",
+                }
+            )
+            continue
+
+        try:
+            download_url = f"{base_url}{download_path}"
+            resp = confluence_fetcher.confluence._session.get(
+                download_url, stream=True
+            )
+            resp.raise_for_status()
+
+            content = b""
+            for chunk in resp.iter_content(chunk_size=8192):
+                content += chunk
+
+            mime_type = att.get("extensions", {}).get(
+                "mediaType", "application/octet-stream"
+            )
+            blob = base64.b64encode(content).decode("utf-8")
+
+            resources.append(
+                EmbeddedResource(
+                    type="resource",
+                    resource=BlobResourceContents(
+                        uri=f"attachment://{att.get('id', 'unknown')}/{title}",
+                        mimeType=mime_type,
+                        blob=blob,
+                    ),
+                )
+            )
+            downloaded += 1
+        except Exception as e:
+            logger.error(f"Error downloading attachment '{title}': {e}")
+            failed.append({"filename": title, "error": str(e)})
+
+    summary = TextContent(
+        type="text",
+        text=json.dumps(
+            {
+                "success": True,
+                "content_id": content_id,
+                "downloaded": downloaded,
+                "failed": failed,
+            }
+        ),
+    )
+
+    return [summary, *resources]
